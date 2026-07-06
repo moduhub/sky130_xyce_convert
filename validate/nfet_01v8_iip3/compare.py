@@ -147,10 +147,11 @@ def run_ngspice(ngspice_dir):
         idx = np.argmin(np.abs(freqs - f_target))
         return amp[idx]
 
-    return {
+    points = {
         "f1": at(F1), "f2": at(F2),
         "im3_lo": at(2 * F1 - F2), "im3_hi": at(2 * F2 - F1),
     }
+    return points, freqs, amp
 
 
 def run_xyce(xyce_dir):
@@ -170,10 +171,11 @@ def run_xyce(xyce_dir):
     def at(f_target):
         return rows[round(f_target)]
 
-    return {
+    points = {
         "f1": at(F1), "f2": at(F2),
         "im3_lo": at(2 * F1 - F2), "im3_hi": at(2 * F2 - F1),
     }
+    return points, rows
 
 
 def iip3_from_amplitudes(a_fund, a_im3, vin):
@@ -198,8 +200,8 @@ def main():
     xyce_dir = workdir / "xyce_run"
     stage_models(args.pdk_root, args.pdk, ngspice_dir, xyce_dir, Path(args.patches))
 
-    ng = run_ngspice(ngspice_dir)
-    xy = run_xyce(xyce_dir)
+    ng, ng_freqs, ng_amp = run_ngspice(ngspice_dir)
+    xy, xy_rows = run_xyce(xyce_dir)
 
     labels = ["f1 (100MHz)", "f2 (101MHz)", "IM3 lo (99MHz)", "IM3 hi (102MHz)"]
     keys = ["f1", "f2", "im3_lo", "im3_hi"]
@@ -226,6 +228,37 @@ def main():
     png_path = outdir / f"nfet_01v8_iip3_{CORNER}.png"
     fig.savefig(png_path, dpi=150)
 
+    # --- Espectro em torno dos tons: FFT do ngspice (linha continua) vs
+    # pontos discretos do .HB do Xyce (grade de intermodulacao, nao um
+    # espectro denso -- HB so resolve exatamente as frequencias de
+    # mistura que ele mesmo calcula). ---
+    fmin, fmax = 95e6, 106e6
+    mask = (ng_freqs >= fmin) & (ng_freqs <= fmax)
+    ng_freqs_win = ng_freqs[mask]
+    ng_db_win = 20 * np.log10(np.maximum(ng_amp[mask], 1e-15))
+
+    xy_freqs_win = sorted(f for f in xy_rows if fmin <= f <= fmax)
+    xy_db_win = [20 * np.log10(max(xy_rows[f], 1e-15)) for f in xy_freqs_win]
+
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    ax2.plot(ng_freqs_win / 1e6, ng_db_win, "-", color="tab:blue", linewidth=1,
+             label="ngspice (FFT do transiente)")
+    ax2.plot(np.array(xy_freqs_win) / 1e6, xy_db_win, "o", color="tab:orange",
+              markersize=7, label="Xyce (.HB, grade discreta)")
+    for f_target, tag in [(F1, "f1"), (F2, "f2"),
+                          (2 * F1 - F2, "IM3"), (2 * F2 - F1, "IM3")]:
+        ax2.axvline(f_target / 1e6, color="gray", linewidth=0.5, linestyle=":")
+    ax2.set_xlabel("freq (MHz)")
+    ax2.set_ylabel("|I(VDS)| (dBA)")
+    ax2.set_title(f"Espectro two-tone usado na extracao do IIP3 (zoom {fmin/1e6:.0f}-{fmax/1e6:.0f}MHz)\n"
+                  f"picos: f1/f2 (fundamentais) e IM3 (2f1-f2, 2f2-f1) -- resto e ruido/chao numerico")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    fig2.tight_layout()
+
+    spectrum_png_path = outdir / f"nfet_01v8_iip3_spectrum_{CORNER}.png"
+    fig2.savefig(spectrum_png_path, dpi=150)
+
     a_fund_ng = (ng["f1"] + ng["f2"]) / 2
     a_im3_ng = (ng["im3_lo"] + ng["im3_hi"]) / 2
     a_fund_xy = (xy["f1"] + xy["f2"]) / 2
@@ -234,7 +267,7 @@ def main():
     iip3_ng = iip3_from_amplitudes(a_fund_ng, a_im3_ng, VIN)
     iip3_xy = iip3_from_amplitudes(a_fund_xy, a_im3_xy, VIN)
 
-    print(f"Plot salvo em {png_path}\n")
+    print(f"Plots salvos em {png_path} e {spectrum_png_path}\n")
     print(f"{'':>12} {'ngspice':>14} {'Xyce':>14}")
     for label, k in zip(labels, keys):
         print(f"{k:>12} {ng[k]:>14.4e} {xy[k]:>14.4e}")

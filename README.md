@@ -368,6 +368,20 @@ metodologia (achado 13) -- **aberto, nao bloqueante**, resultado de
 limitacao pratica do metodo transiente+FFT pra sinais ~100dB abaixo da
 fundamental, nao de divergencia de modelo entre os simuladores.
 
+Espectro usado na extracao (zoom 95-106MHz, escala dB) -- a FFT do
+transiente do ngspice (linha) contra a grade discreta do `.HB` do Xyce
+(pontos), com os 4 alvos marcados:
+
+![Espectro two-tone usado na extracao do IIP3](validate/results/nfet_01v8_iip3_spectrum_tt.png)
+
+Da pra ver os dois picos de IM3 (99MHz, 102MHz) claramente acima do
+chao de ruido numerico da FFT (~30-40dB de folga -- medida confiavel,
+nao e o proprio ruido que estamos lendo) e, ao mesmo tempo, visivelmente
+mais baixos que o esperado se batessem com o Xyce -- o gap de ~4x do
+achado 13 aparece aqui como um degrau entre a linha azul (ngspice) e o
+ponto laranja (Xyce) exatamente nessas duas frequencias, enquanto nas
+fundamentais (100MHz, 101MHz) os dois praticamente coincidem.
+
 Reproduzir:
 
 ```bash
