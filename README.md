@@ -215,6 +215,15 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
       apertado **quebra** a simulacao (poucas centenas/milhares de
       pontos em vez de dezenas de milhares -- o solver falha, nao
       converge melhor).
+    - Testado tambem: aumentar a janela de simulacao 10x (20us -> 200us,
+      resolucao de FFT 50kHz -> 5kHz) com o mesmo `reltol=1e-10` **nao**
+      muda o IM3 (`3.9e-11`/`4.5e-11`, ~2% de diferenca da janela
+      curta) -- descarta a hipotese de "ruido incoerente que promedia
+      com janela maior" (se fosse ruido aleatorio, 10x mais amostras
+      devia reduzir o chao por ganho de processamento). Confirma que o
+      limitante e erro de truncamento SISTEMATICO do integrador
+      adaptativo (dependente de `reltol`/`abstol`, nao do tamanho da
+      janela).
     - Resultado final: `Vin_IIP3` ngspice=853mV vs Xyce=1761mV (razao
       0.48, ~2x). Acima da tolerancia de 10% que `validate.py` propõe,
       mas esse caso ja e nao-bloqueante ali -- e um teste conhecido
