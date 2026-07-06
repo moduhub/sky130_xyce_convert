@@ -123,6 +123,31 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    depender de gm/Cgg/Cgd (Y11/Y12/Y21), mas afeta qualquer analise
    sensivel a impedancia de saida em RF (matching, Q de saida).
 
+9. **Xyce nao expõe cgb/cbd/cbs/id via query de variavel interna do
+   dispositivo -- limitacao de introspeccao, nao do modelo**: testando
+   `.PRINT DC N(XM1:MSKY130_FD_PR__NFET_01V8:<param>)`, so `CGS`, `CGD`,
+   `GM`, `GDS` e `VTH` respondem; `CGB`, `CBD`, `CBS`, `CDB`, `CSB`,
+   `ID`, `IDS`, `GBD`, `GBS` dao erro "Function or variable ... is not
+   [available]". ngspice expõe o conjunto completo
+   (`@m.xm1.msky130_fd_pr__nfet_01v8[cgb]` etc. todos respondem). A
+   fisica existe dos dois lados (Y22 no achado 8 prova isso); so nao da
+   pra ler cgb/cbd/cbs direto do Xyce por esse caminho -- precisaria de
+   extracao via `.AC` 3-porta (fonte tambem no source, hoje aterrado
+   junto com bulk) pra isolar essas 3 capacitancias indiretamente.
+
+10. **Gotcha de metodologia no ngspice (nao e diferenca entre
+    simuladores, mas quase gerou dado errado)**: ler
+    `@m.xm1...[cgs]` dentro de um `.dc` sem um `.save` explicito
+    ANTES do `.dc` retorna o MESMO valor (do ultimo ponto do sweep) em
+    TODAS as linhas do `wrdata` -- sem erro, sem aviso. E preciso
+    `.save v(g) v(d) @m.xm1...[cgs] @m.xm1...[cgd]` (incluindo os nos
+    normais tambem, senao `.save` some com eles) antes do `.dc` pra
+    ngspice de fato reamostrar por ponto. Descoberto comparando contra
+    Xyce: o valor "congelado" reportado pelo ngspice em toda a curva
+    batia com o valor real do Xyce so no ULTIMO ponto do sweep (Vgs ou
+    Vds = 1.8V) -- sinal de que o ngspice so tinha capturado o cgs/cgd
+    do ponto final da analise, nao um valor por ponto.
+
 ## Validacao: Id-Vds nfet_01v8, ngspice (original) vs Xyce (convertido)
 
 `validate/nfet_01v8_idvds/compare.py` instancia um `sky130_fd_pr__nfet_01v8`
@@ -155,6 +180,36 @@ python3 validate/nfet_01v8_idvds/compare.py \
 
 Este resultado só cobre gm/gds em DC (achado 1 da matriz de
 `validate.py`); C-V, Y-parameters e IIP3 via HB ainda sao TODO.
+
+## Validacao: C-V nfet_01v8, ngspice vs Xyce
+
+`validate/nfet_01v8_cv/compare.py` le `Cgs`/`Cgd` direto dos parametros
+internos do BSIM4 (sem precisar de `.AC`) via `.DC` + query de variavel
+interna do dispositivo, varrendo Vgs (Vds=0.9V fixo) e Vds (Vgs=1.2V
+fixo) 0..1.8V. Cobertura parcial por escolha: `Cgb`/`Cdb`/`Csb` ficam de
+fora porque o Xyce nao expõe essas 3 pelo mesmo caminho (achado 9).
+
+![C-V ngspice vs Xyce](validate/results/nfet_01v8_cv_tt.png)
+
+| curva      | erro max (%) |
+| ---------- | ------------ |
+| Cgs vs Vgs | 3.7e-02      |
+| Cgd vs Vgs | 3.4e-06      |
+| Cgs vs Vds | 4.1e-01      |
+| Cgd vs Vds | 1.3e-05      |
+
+Curvas classicas de C-V de MOSFET (sigmoide de `Cgs` no turn-on, vale de
+`Cgd` no pinch-off `Vgs=Vds+Vov`, rolloff de Miller de `Cgd` vs Vds) --
+ngspice e Xyce essencialmente sobrepostos, erro maximo <0.5% (`Cgs` vs
+Vds, provavelmente onde a curva tem a maior derivada/mais sensivel a
+diferenças de passo de sweep entre os dois simuladores).
+
+Reproduzir:
+
+```bash
+python3 validate/nfet_01v8_cv/compare.py \
+    --pdk-root /usr/local/share/pdk --pdk sky130A
+```
 
 ## Validacao: Y-parameters nfet_01v8, ngspice vs Xyce (.AC)
 
