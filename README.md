@@ -404,12 +404,16 @@ python3 -m converter.cli convert \
    trazer parametros dependentes de `sa`/`sb`/drift region que podem
    tocar as expressoes "dinamicas" que o Xyce rejeita (ver conversa
    sobre resistores dependentes de tensao).
-4. `validate/nfet_01v8_idvds/compare.py` cobre o 1o caso (gm/gds em DC,
-   ver secao "Validacao" acima) com runners reais de ngspice/Xyce.
-   Faltam C-V, Y-parameters (.AC) e IIP3 via HB -- os 2 outros casos
-   bloqueantes da matriz em `validate.py`. Vale integrar este script
-   (ou o padrao dele) de volta em `validate.py`/`run_case` quando isso
-   for feito, hoje sao dois caminhos separados.
+4. Os 3 casos bloqueantes da matriz em `validate.py` (gm/gds DC, C-V,
+   Y-parameters) tem runners reais e resultados publicados -- ver as
+   secoes "Validacao" acima (`validate/nfet_01v8_idvds/`,
+   `validate/nfet_01v8_cv/`, `validate/nfet_01v8_yparams/`). IIP3
+   (nao-bloqueante) tambem tem runner (`validate/nfet_01v8_iip3/`), mas
+   com gap de ~4x em aberto (achado 13) -- so falta `.NOISE`
+   (nao-bloqueante) pra matriz inteira ter pelo menos uma tentativa
+   real. Vale integrar esses scripts (ou o padrao deles) de volta em
+   `validate.py`/`run_case` quando fizer sentido consolidar -- hoje sao
+   caminhos separados por dispositivo/analise.
 5. ~~Integrar como estagio de build no Dockerfile~~ FEITO -- ver
    `docker/sky130_xyce_convert/install.sh` e o stage `xyce-pdk-convert`
    no `Dockerfile` do repo `eda-env` (`FROM pdk-stage`, escopo restrito
