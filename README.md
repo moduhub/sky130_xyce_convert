@@ -224,6 +224,18 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
       limitante e erro de truncamento SISTEMATICO do integrador
       adaptativo (dependente de `reltol`/`abstol`, nao do tamanho da
       janela).
+
+      ![Teste de janela: 20us vs 200us](validate/results/nfet_01v8_iip3_window_test_tt.png)
+
+      O grafico mostra os dois efeitos distintos: no espectro completo
+      (painel esquerdo), o CHAO DE RUIDO cai visivelmente com a janela
+      maior (ganho de processamento normal de FFT p/ ruido de banda
+      larga incoerente) -- mas no zoom sobre o pico do IM3 (painel
+      direito) a ALTURA do pico e identica nas duas janelas. Ou seja: o
+      excesso de IM3 frente ao Xyce nao e ruido de banda larga (isso
+      teria caido com a janela maior) -- e um artefato deterministico e
+      coerente, que se repete identico a cada ciclo (ligado ao passo do
+      integrador via `reltol`/`abstol`, nao a duracao da simulacao).
     - Resultado final: `Vin_IIP3` ngspice=853mV vs Xyce=1761mV (razao
       0.48, ~2x). Acima da tolerancia de 10% que `validate.py` propõe,
       mas esse caso ja e nao-bloqueante ali -- e um teste conhecido
