@@ -7,8 +7,11 @@ precisar excita-lo) -- ao contrario de so subtrair Cgd do Y22 total
 com Cds se source e bulk estiverem no mesmo no, como no teste de
 Y-parameters de 2 portas em compare.py).
 
-Ponto de operacao e L/W identicos a compare.py (Vgs=1.2V, Vds=0.9V,
-L=160nm, W=1.1um, corner tt), numa unica frequencia (1MHz).
+Varre a mesma faixa de frequencia de compare.py (1MHz-10GHz) no mesmo
+ponto de operacao/L/W (Vgs=1.2V, Vds=0.9V, L=160nm, W=1.1um, corner tt)
+para mostrar que a razao ngspice/Xyce de Cdb e constante com a
+frequencia (capacitancia pura, nao artefato de ruido) -- gera o PNG
+usado no README.
 
 Uso:
     python3 validate/nfet_01v8_yparams/cdb_3port_check.py
@@ -32,7 +35,9 @@ L = "160e-9"
 W = "1.1e-6"
 VGS_BIAS = 1.2
 VDS_BIAS = 0.9
-FREQ = "1meg"
+FSTART = "1meg"
+FSTOP = "10g"
+PTS_PER_DEC = 5
 PORTS = ["gate", "drain", "source"]
 AC = {"gate": (1, 0, 0), "drain": (0, 1, 0), "source": (0, 0, 1)}
 
@@ -50,7 +55,7 @@ VDS d 0 dc {vds} ac {ac_d}
 VGS g 0 dc {vgs} ac {ac_g}
 VS s 0 dc 0 ac {ac_s}
 
-.ac lin 1 {freq} {freq}
+.ac dec {ppd} {fstart} {fstop}
 
 .control
 run
@@ -71,7 +76,7 @@ VDS d 0 dc {vds} ac {ac_d}
 VGS g 0 dc {vgs} ac {ac_g}
 VS s 0 dc 0 ac {ac_s}
 
-.ac lin 1 {freq} {freq}
+.ac dec {ppd} {fstart} {fstop}
 
 .PRINT AC FORMAT=csv FILE=out_{port}.csv IR(VGS) II(VGS) IR(VDS) II(VDS) IR(VS) II(VS)
 
@@ -102,16 +107,25 @@ def stage_models(pdk_root, pdk, ngspice_dir, xyce_dir, patches_path):
 
 
 def run_ngspice(ngspice_dir, port):
+    """Retorna (freqs, i_gate, i_drain, i_source) -- listas paralelas."""
     ac_g, ac_d, ac_s = AC[port]
     tb = ngspice_dir / f"tb_{port}.spice"
     tb.write_text(NGSPICE_TB.format(port=port, corner=CORNER, device=DEVICE_LINE,
                                      vgs=VGS_BIAS, vds=VDS_BIAS,
-                                     ac_g=ac_g, ac_d=ac_d, ac_s=ac_s, freq=FREQ))
+                                     ac_g=ac_g, ac_d=ac_d, ac_s=ac_s,
+                                     ppd=PTS_PER_DEC, fstart=FSTART, fstop=FSTOP))
     subprocess.run(["ngspice", "-b", tb.name], cwd=ngspice_dir,
                     capture_output=True, text=True, check=True)
-    line = (ngspice_dir / f"out_{port}.csv").read_text().splitlines()[0]
-    p = [float(x) for x in line.split()]
-    return complex(p[1], p[3]), complex(p[5], p[7]), complex(p[9], p[11])
+    freqs, ig, id_, is_ = [], [], [], []
+    with open(ngspice_dir / f"out_{port}.csv") as fh:
+        for line in fh:
+            p = [float(x) for x in line.split()]
+            if len(p) >= 12:
+                freqs.append(p[0])
+                ig.append(complex(p[1], p[3]))
+                id_.append(complex(p[5], p[7]))
+                is_.append(complex(p[9], p[11]))
+    return freqs, ig, id_, is_
 
 
 def run_xyce(xyce_dir, port):
@@ -119,13 +133,20 @@ def run_xyce(xyce_dir, port):
     tb = xyce_dir / f"tb_{port}.spice"
     tb.write_text(XYCE_TB.format(port=port, corner=CORNER, device=DEVICE_LINE,
                                   vgs=VGS_BIAS, vds=VDS_BIAS,
-                                  ac_g=ac_g, ac_d=ac_d, ac_s=ac_s, freq=FREQ))
+                                  ac_g=ac_g, ac_d=ac_d, ac_s=ac_s,
+                                  ppd=PTS_PER_DEC, fstart=FSTART, fstop=FSTOP))
     subprocess.run(["Xyce", tb.name], cwd=xyce_dir,
                     capture_output=True, text=True, check=True)
-    lines = (xyce_dir / f"out_{port}.csv").read_text().splitlines()
-    vals = [float(x) for x in lines[1].split(",")]
-    # Xyce .PRINT AC sempre antepoe FREQ, mesmo sem pedir -- vals[0] e FREQ.
-    return complex(vals[1], vals[2]), complex(vals[3], vals[4]), complex(vals[5], vals[6])
+    freqs, ig, id_, is_ = [], [], [], []
+    with open(xyce_dir / f"out_{port}.csv") as fh:
+        lines = fh.read().splitlines()
+        for line in lines[1:]:
+            v = [float(x) for x in line.split(",")]
+            freqs.append(v[0])
+            ig.append(complex(v[1], v[2]))
+            id_.append(complex(v[3], v[4]))
+            is_.append(complex(v[5], v[6]))
+    return freqs, ig, id_, is_
 
 
 def main():
@@ -134,33 +155,78 @@ def main():
     parser.add_argument("--pdk", default=os.environ.get("PDK", "sky130A"))
     parser.add_argument("--patches", default=str(REPO_ROOT / "patches/nfet_01v8.yaml"))
     parser.add_argument("--workdir", default="/tmp/validate_nfet_01v8_cdb_3port")
+    parser.add_argument("--outdir", default=str(REPO_ROOT / "validate/results"))
     args = parser.parse_args()
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     workdir = Path(args.workdir)
     ngspice_dir = workdir / "ngspice_run"
     xyce_dir = workdir / "xyce_run"
     stage_models(args.pdk_root, args.pdk, ngspice_dir, xyce_dir, Path(args.patches))
 
-    w = 2 * math.pi * 1e6
+    results = {}
     for label, ng_dir, runner in [("ngspice", ngspice_dir, run_ngspice), ("Xyce", xyce_dir, run_xyce)]:
-        Y = {}
-        for port in PORTS:
-            ig, id_, is_ = runner(ng_dir, port)
-            Y[("g", port)] = ig
-            Y[("d", port)] = id_
-            Y[("s", port)] = is_
+        by_port = {port: runner(ng_dir, port) for port in PORTS}
+        freqs = by_port["gate"][0]
 
-        cgd_gd = -Y[("g", "drain")].imag / w
-        cgd_dg = -Y[("d", "gate")].imag / w
-        cds = -Y[("d", "source")].imag / w
-        cdb = Y[("d", "drain")].imag / w - cgd_gd - cds
+        cgd, cds, cdb = [], [], []
+        for i, f in enumerate(freqs):
+            w = 2 * math.pi * f
+            id_drain = by_port["drain"][2][i]  # excita drain, le corrente no drain (Ydd)
+            ig_drain = by_port["drain"][1][i]  # excita drain, le corrente no gate (Ygd)
+            id_source = by_port["source"][2][i]  # excita source, le corrente no drain (Yds)
 
-        print(f"=== {label} ===")
-        print(f"  Cgd (via Ygd, g<-d)  = {cgd_gd:.6e}")
-        print(f"  Cgd (via Ydg, d<-g)  = {cgd_dg:.6e}  (nao-reciproco, esperado no BSIM4)")
-        print(f"  Cds (via Yds, d<-s)  = {cds:.6e}")
-        print(f"  Cdb (via KCL: Ydd/w - Cgd - Cds) = {cdb:.6e}")
-        print()
+            cgd_i = -ig_drain.imag / w  # Ygd: excita drain, le gate
+            cds_i = -id_source.imag / w  # Yds: excita source, le drain
+            cdb_i = id_drain.imag / w - cgd_i - cds_i  # KCL: Ydd = Cgd+Cds+Cdb
+
+            cgd.append(cgd_i)
+            cds.append(cds_i)
+            cdb.append(cdb_i)
+
+        results[label] = (freqs, cgd, cds, cdb)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    labels_caps = ["Cgd (via Ygd)", "Cds (via Yds)", "Cdb (via KCL)"]
+    max_err = {}
+    for col, cap_name in enumerate(labels_caps):
+        ax = axes[col]
+        _, *caps_ng = results["ngspice"]
+        _, *caps_xy = results["Xyce"]
+        freqs_ng = results["ngspice"][0]
+        freqs_xy = results["Xyce"][0]
+        ng_vals = caps_ng[col]
+        xy_vals = caps_xy[col]
+
+        ax.semilogx(freqs_ng, [abs(v) * 1e15 for v in ng_vals], "-", color="tab:blue",
+                    linewidth=2, label="ngspice")
+        ax.semilogx(freqs_xy, [abs(v) * 1e15 for v in xy_vals], "none", marker="x",
+                    color="tab:orange", markersize=7, label="Xyce")
+        ax.set_xlabel("freq (Hz)")
+        ax.set_ylabel("|C| (fF)")
+        ax.set_title(cap_name)
+        ax.grid(True, which="both", alpha=0.3)
+        ax.legend(fontsize=8)
+
+        errs = [abs(abs(n) - abs(x)) / max(abs(n), 1e-21) * 100 for n, x in zip(ng_vals, xy_vals)]
+        max_err[cap_name] = max(errs)
+
+    fig.suptitle(f"sky130_fd_pr__nfet_01v8: Cgd/Cds/Cdb via extracao de 3 portas\n"
+                 f"L={L} W={W}, Vgs={VGS_BIAS}V Vds={VDS_BIAS}V, corner {CORNER}")
+    fig.tight_layout()
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    png_path = outdir / f"nfet_01v8_cdb_3port_{CORNER}.png"
+    fig.savefig(png_path, dpi=150)
+
+    print(f"Plot salvo em {png_path}\n")
+    print(f"{'capacitancia':>16} {'max_err%':>12}")
+    for name, err in max_err.items():
+        print(f"{name:>16} {err:>12.2e}")
 
 
 if __name__ == "__main__":

@@ -272,6 +272,35 @@ python3 validate/nfet_01v8_yparams/compare.py \
     --pdk-root /usr/local/share/pdk --pdk sky130A
 ```
 
+### Decomposicao de Y22: Cgd/Cds/Cdb via 3 portas
+
+`validate/nfet_01v8_yparams/cdb_3port_check.py` e a medicao independente
+citada no achado 8 -- source no seu proprio no (nao mais amarrado ao
+bulk), 3 excitacoes separadas (gate/drain/source), varrendo a mesma
+faixa 1MHz-10GHz.
+
+![Cgd/Cds/Cdb via 3 portas](validate/results/nfet_01v8_cdb_3port_tt.png)
+
+| capacitancia   | erro max (%) |
+| -------------- | ------------ |
+| Cgd (via Ygd)  | 5.9e-06      |
+| Cds (via Yds)  | 2.4e-02      |
+| Cdb (via KCL)  | 16.3         |
+
+`Cgd` e `Cds` ficam essencialmente flat e sobrepostos em toda a faixa
+(a curva de `Cgd` sobe visivelmente >1GHz nos dois simuladores por
+igual -- o modelo quasi-estatico comecando a mostrar seus limites, nao
+diferenca entre eles). `Cdb` tem um gap constante e nitido (~16%) do
+inicio ao fim -- confirma visualmente o que o achado 8 descreve: a
+divergencia inteira de Y22 mora ali.
+
+Reproduzir:
+
+```bash
+python3 validate/nfet_01v8_yparams/cdb_3port_check.py \
+    --pdk-root /usr/local/share/pdk --pdk sky130A
+```
+
 ## Uso
 
 ```bash
