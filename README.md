@@ -65,6 +65,21 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    sao esperados em outros arquivos do PDK (primitivos de diodo/resistor
    explicitos, ainda nao inspecionados).
 
+5. **Novo achado (rodando `scan` contra todos os corners de nfet_01v8 de
+   uma vez, via `docker/sky130_xyce_convert/install.sh` no eda-env)**:
+   dezenas de parametros `*_diff_N` (`a0_diff_16`, `ags_diff_10`,
+   `b0_diff_14`, `b1_diff_1`, `eta0_diff_1`, `k2_diff_10`, `keta_diff_10`,
+   `nfactor_diff_55`, `rdsw_diff_16`, `u0_diff_2`, `ua_diff_53`, etc.)
+   sao referenciados em expressoes dos `.pm3.spice` de corner mas nao tem
+   `.param` definido em nenhum arquivo do conjunto `nfet_01v8*` staged
+   pelo open_pdks. Mesmo padrao do achado 3 (`*_slope`): ou tem um arquivo
+   comum ainda nao incluido no pipeline, ou cada corner so define o
+   subconjunto de `_diff_N` relevante para o seu proprio range de bins
+   (a contagem 63 vs 180 do achado 2 sugere isso). Nao bloqueia o build
+   hoje (scan so falha em hard-fails), mas precisa ser resolvido antes de
+   declarar a conversao de nfet_01v8 completa -- ver `known_external_dependencies`
+   em `patches/nfet_01v8.yaml` para o mesmo mecanismo usado no achado 3.
+
 ## Uso
 
 ```bash
