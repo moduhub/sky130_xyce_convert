@@ -1,0 +1,97 @@
+# Manifesto declarativo de patches sky130 (ngspice/hspice-flavor) -> Xyce.
+#
+# Cada entrada é aplicada como uma substituição regex sobre a "linha lógica"
+# (após junção das continuações "+"). Isso mantém as transformações como
+# DADO auditável em vez de lógica espalhada em if/else no código.
+#
+# Campos:
+#   id:        identificador curto e estável (usado em relatórios/logs)
+#   reason:    por que essa transformação existe (referência à conversa/fonte)
+#   scope:     "all" (qualquer arquivo) ou lista de padrões de arquivo
+#   pattern:   regex (re.sub), aplicado à linha lógica inteira
+#   repl:      substituição
+#   enabled:   liga/desliga sem apagar o registro histórico
+#   verified_in_nfet_01v8_tt: se já confirmamos (via grep no arquivo real)
+#       que essa condição ocorre ou não neste device/versão específico.
+#       "not_found" = não observamos evidência ainda; mantido como rede de
+#       segurança para outros arquivos (diodos, resistores, HV) do PDK.
+
+patches:
+
+  - id: rename_param_vt
+    reason: >
+      "vt" colide com identificador interno do parser em alguns builds Xyce
+      (relatado por mkghub/skywater130_fd_pr_models no port geral do sky130_fd_pr).
+    scope: all
+    pattern: '(?<![A-Za-z0-9_])vt(?![A-Za-z0-9_])'
+    repl: 'vt0_renamed'
+    enabled: true
+    verified_in_nfet_01v8_tt: not_found
+
+  - id: rename_param_temp
+    reason: >
+      "temp" colide com variável reservada em Xyce; renomear para "temper"
+      (mesma fonte do patch acima).
+    scope: all
+    pattern: '(?<![A-Za-z0-9_])temp(?![A-Za-z0-9_])'
+    repl: 'temper'
+    enabled: true
+    verified_in_nfet_01v8_tt: not_found
+
+  - id: comment_char_dollar
+    reason: >
+      Comentário de fim de linha "$" não é reconhecido pelo parser do Xyce;
+      ngspice/hspice aceitam. Trocar por ";".
+    scope: all
+    pattern: '\$(.*)$'
+    repl: ';\1'
+    enabled: true
+    verified_in_nfet_01v8_tt: not_found
+
+  - id: diode_level3_to_level2
+    reason: >
+      Diode level=3 não é suportado pelo Xyce; downgrade documentado para
+      level=2 (mkghub). Ainda não observado no nfet_01v8__tt.pm3.spice —
+      a junção do fet é parametrizada via ad/as/pd/ps do próprio BSIM4,
+      não por um .model de diodo separado neste arquivo específico. Manter
+      ativo para quando processarmos primitivos de diodo explícitos.
+    scope: all
+    pattern: '(\.model\s+\S+\s+d\b.*?\blevel\s*=\s*)3(\.0)?\b'
+    repl: '\g<1>2'
+    enabled: true
+    verified_in_nfet_01v8_tt: not_found
+
+  - id: include_path_env_var
+    reason: >
+      .include "$VAR/..." (estilo shell) não resolve no parser do Xyce.
+      Workaround documentado: link simbólico local. Aqui normalizamos para
+      um caminho relativo que o pipeline de build já resolve antes de gerar
+      o netlist final (ver converter.py: resolve_includes).
+    scope: all
+    pattern: '\.include\s+"\$([A-Za-z_][A-Za-z0-9_]*)/(.*)"'
+    repl: '.include "\1/\2"'
+    enabled: true
+    verified_in_nfet_01v8_tt: not_applicable  # não há .include com $VAR nestes 2 arquivos
+
+  - id: ensure_scale_option
+    reason: >
+      Sem ".options parser scale=1e-6" (ou sufixo de unidade explícito em
+      W/L), Xyce interpreta L/W como metros -> nenhum bin bate -> erro
+      "no valid model card found" que parece bug de binning mas é unidade.
+      Este patch NÃO edita o arquivo de modelo; é uma checagem/injeção no
+      nível do testbench de validação (ver validate.py).
+    scope: testbench_only
+    pattern: null
+    repl: null
+    enabled: true
+    verified_in_nfet_01v8_tt: not_applicable
+
+# Parâmetros que sabemos que são referenciados dentro de expressões {...}
+# mas cuja definição não está nos dois arquivos que já inspecionamos
+# (nfet_01v8__tt.pm3.spice / tt.corner.spice). O scanner.py trata isso como
+# achado, não como patch — precisa localizar o arquivo de origem real
+# (provável: mismatch.corner.spice ou wrapper comum) antes do port final.
+known_external_dependencies:
+  - sky130_fd_pr__nfet_01v8__toxe_slope
+  - sky130_fd_pr__nfet_01v8__vth0_slope
+  - sky130_fd_pr__nfet_01v8__voff_slope
