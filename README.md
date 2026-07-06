@@ -107,26 +107,42 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    Carlo) no lado Xyce para nfet_01v8 ate acharmos uma forma que o Xyce
    aceite (ou até o Xyce ganhar suporte a essa extensão).
 
-8. **Divergencia real em Y22 (parte imaginaria) -- ISOLADA em Cdb, ABERTA,
-   nao e bug do conversor**: validando `.AC` (ver secao abaixo), Y11/Y12/Y21
-   batem com erro <2e-4% em toda a faixa 1MHz-10GHz, mas a parte
-   imaginaria de Y22 diverge de forma sistematica e **proporcional a
-   frequencia** (razao ngspice/Xyce constante em toda a faixa, nao e
-   ruido). Decompondo `Cdd_total = Im(Y22)/w` usando o `Cgd` medido
-   independentemente no teste de C-V (achado abaixo) no mesmo ponto de
-   polarizacao (Vgs=1.2V/Vds=0.9V): `Cgd` bate **identico** entre os
-   dois simuladores (`-4.629324e-19` nos dois, razao 1.0000), mas
-   `Cdb = Cdd_total - Cgd` reproduz sozinho quase toda a razao do total
-   (1.1238 vs 1.1237 do total -- `Cgd` e 3 ordens de grandeza menor que
-   `Cdb` nesse ponto, ja em saturacao). **A divergencia inteira de Y22 e
-   `Cdb` (capacitancia de juncao dreno-substrato)** -- exatamente a
-   capacitancia que depende de `AD`/`PD` (a razao caiu de 1.2573x com
-   `ad=pd=0` para 1.1237x com `AD`/`PD` explicitos, achado ja registrado
-   antes) e que o Xyce nao deixa ler direto via variavel interna
-   (achado 9) -- so dava pra inferir indiretamente via Y22 mesmo.
-   `Cgd`/`gds` (as partes que batem) sao as que efetivamente importam
-   pra HB/mixer/PA (Y11/Y12/Y21); `Cdb` afeta impedancia de saida em RF
-   (matching, Q de saida) onde o bulk/substrato entra na malha.
+8. **Divergencia real em Y22 (parte imaginaria) -- ISOLADA em Cdb via
+   medicao independente de 3 portas, ABERTA, nao e bug do conversor**:
+   validando `.AC` (ver secao abaixo), Y11/Y12/Y21 batem com erro <2e-4%
+   em toda a faixa 1MHz-10GHz, mas a parte imaginaria de Y22 diverge de
+   forma sistematica e **proporcional a frequencia** (razao ngspice/Xyce
+   constante, nao e ruido).
+
+   Primeira tentativa (subtrair `Cgd` do C-V de `Cdd_total=Im(Y22)/w`)
+   apontou pra `Cdb`, mas isso e raciocinio por eliminacao -- nao prova
+   nada sozinho, e o teste original tinha source e bulk no MESMO no
+   (`XM1 d g 0 0 ...`), entao o "residual" podia ser `Cdb+Cds` misturados,
+   nao `Cdb` puro. Pra fechar isso direito, medimos de verdade com 3
+   portas (`XM1 d g s 0 ...`, source no seu proprio no, excitando gate/
+   drain/source separadamente, bulk inferido por conservacao de carga
+   via KCL sem precisar excita-lo): `Cgd` (via Ygd) e `Cds` (via Yds)
+   batem **identicos** entre ngspice e Xyce quando medidos assim, cada
+   um isoladamente -- so o residual em `Ydd` (que so pode vir de `Cdb`,
+   ja que Cgd/Cds estao contabilizados) continua divergindo (~1.2x,
+   mesma ordem de grandeza achada antes). Ou seja: nao e mais "o que
+   sobra vira Cdb por definicao" -- agora Cgd e Cds foram medidos direto
+   e batem; so `Cdb` diverge.
+
+   Achado lateral (real, confirmado identico nos dois simuladores, nao
+   e erro): `Cgd` via `Ygd` (excitando dreno) != `Cgd` via `Ydg`
+   (excitando gate) -- ~2.15x de diferenca. Transcapacitancia
+   quasi-estatica do BSIM4 e genuinamente nao-reciproca (propriedade
+   conhecida de modelos de carga nao-linear); os dois simuladores
+   concordam nesse valor, entao nao afeta a conclusao sobre Cdb.
+
+   `Cdb` e exatamente a capacitancia que depende de `AD`/`PD` (a razao
+   caiu de 1.2573x com `ad=pd=0` para 1.1237x com `AD`/`PD` explicitos,
+   achado anterior) e que o Xyce nao deixa ler direto via variavel
+   interna (achado 9). `Cgd`/`gds` (as partes que batem) sao as que
+   efetivamente importam pra HB/mixer/PA (Y11/Y12/Y21); `Cdb` afeta
+   impedancia de saida em RF (matching, Q de saida) onde o bulk/
+   substrato entra na malha.
 
 9. **Xyce nao expõe cgb/cbd/cbs/id via query de variavel interna do
    dispositivo -- limitacao de introspeccao, nao do modelo**: testando
@@ -136,9 +152,9 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    [available]". ngspice expõe o conjunto completo
    (`@m.xm1.msky130_fd_pr__nfet_01v8[cgb]` etc. todos respondem). A
    fisica existe dos dois lados (Y22 no achado 8 prova isso); so nao da
-   pra ler cgb/cbd/cbs direto do Xyce por esse caminho -- precisaria de
-   extracao via `.AC` 3-porta (fonte tambem no source, hoje aterrado
-   junto com bulk) pra isolar essas 3 capacitancias indiretamente.
+   pra ler cgb/cbd/cbs direto do Xyce por esse caminho -- a extracao via
+   `.AC` 3-porta (fonte tambem no source, ver achado 8) contorna isso
+   indiretamente pra Cdb/Cds, mas Cgb continua sem medicao direta.
 
 10. **Gotcha de metodologia no ngspice (nao e diferenca entre
     simuladores, mas quase gerou dado errado)**: ler
@@ -152,6 +168,16 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
     batia com o valor real do Xyce so no ULTIMO ponto do sweep (Vgs ou
     Vds = 1.8V) -- sinal de que o ngspice so tinha capturado o cgs/cgd
     do ponto final da analise, nao um valor por ponto.
+
+11. **Gotcha de metodologia no Xyce (idem, quase gerou dado errado)**:
+    `.PRINT AC ... IR(VGS) II(VGS) ...` sempre antepõe uma coluna `FREQ`
+    no CSV de saida, mesmo sem pedir -- ao contrario do `.PRINT DC`, que
+    so imprime exatamente o que foi listado. Um script de parsing que
+    assume "coluna 0 = primeiro item pedido" (em vez de "coluna 0 =
+    FREQ") fica com tudo deslocado em 1 posicao e produz numeros sem
+    sentido fisico (capacitancias em escala 1e-11 em vez de 1e-16).
+    Descoberto comparando os dados BRUTOS de ngspice e Xyce lado a lado
+    -- batiam perfeitamente uma vez alinhados corretamente.
 
 ## Validacao: Id-Vds nfet_01v8, ngspice (original) vs Xyce (convertido)
 
