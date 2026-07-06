@@ -86,6 +86,28 @@ patches:
     enabled: true
     verified_in_nfet_01v8_tt: not_applicable
 
+  - id: strip_mc_mm_switch_mismatch_term
+    reason: >
+      Confirmado rodando Xyce de verdade contra o .pm3.spice convertido:
+      Xyce rejeita expressoes de parametro .model que referenciam AGAUSS(...)
+      com geometria de instancia (l/w/mult) -- "Parameter TOXE for model ...
+      contains unrecognized symbols: {...MC_MM_SWITCH*AGAUSS(...)...}".
+      ngspice aceita essa forma (extensao HSPICE-like de model binning com
+      expressoes dependentes de l/w), Xyce nao. Como MC_MM_SWITCH=0 zera o
+      termo inteiro em qualquer corner deterministico (nao-Monte-Carlo), a
+      remocao e um no-op numerico para esses casos. LIMITACAO CONHECIDA:
+      isso desliga o suporte a mismatch estatistico (Monte Carlo) no lado
+      Xyce para nfet_01v8 -- valido so enquanto Xyce nao suportar (ou nao
+      acharmos outra forma de expressar) essa dependencia geometrica direto
+      no parametro do .model. Cobre toxe/vth0/voff/vth0_slope1 (unico termo
+      aditivo MC_MM_SWITCH*AGAUSS(...)*(...) por parametro, confirmado via
+      grep no tt.pm3.spice).
+    scope: all
+    pattern: '(?i)\+MC_MM_SWITCH\*AGAUSS\([^()]*\)\*\(.*?\)(?=\})'
+    repl: ''
+    enabled: true
+    verified_in_nfet_01v8_tt: found
+
 # Parâmetros que sabemos que são referenciados dentro de expressões {...}
 # mas cuja definição não está nos dois arquivos que já inspecionamos
 # (nfet_01v8__tt.pm3.spice / tt.corner.spice). O scanner.py trata isso como

@@ -80,6 +80,66 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    declarar a conversao de nfet_01v8 completa -- ver `known_external_dependencies`
    em `patches/nfet_01v8.yaml` para o mesmo mecanismo usado no achado 3.
 
+6. **BUG CRITICO no `joiner.py` -- CORRIGIDO**: comentarios `* texto`
+   intercalados DENTRO de blocos `.model` de varias linhas (ex.:
+   `* Model Flag Parameters` seguido de linhas `+ lmin = ... lmax = ...`)
+   eram tratados como inicio de uma nova linha logica, e absorviam as
+   continuacoes `+` seguintes -- apagando silenciosamente `lmin/lmax/
+   wmin/wmax/level/version/binunit` e todo o resto dos parametros BSIM4
+   reais de **todo `.model` card do PDK** (esse padrao de comentario
+   dentro de continuacao e onipresente no sky130_fd_pr). O `.model` card
+   sobrevivia so com o nome, sem nenhum parametro eletrico. Descoberto
+   rodando Xyce de verdade contra o netlist convertido (erro "no valid
+   model card found" -- parecia incompatibilidade do Xyce, mas era
+   corrupcao silenciosa nossa). Corrigido tratando linhas de comentario
+   como transparentes a continuacao (ver `tests/test_joiner.py`).
+
+7. **Incompatibilidade real Xyce confirmada -- patch aplicado**: mesmo
+   com o `.model` correto, o Xyce rejeita a expressao de mismatch
+   estatistico do sky130 (`toxe/vth0/voff = {BASE + MC_MM_SWITCH*
+   AGAUSS(0,1.0,N)*(..._slope/sqrt(l*w*mult))}`) com o erro "Parameter
+   TOXE ... contains unrecognized symbols" -- Xyce nao aceita `AGAUSS`
+   referenciando geometria de instancia (`l`/`w`/`mult`) dentro de uma
+   expressao de parametro `.model` (ngspice aceita). Como `MC_MM_SWITCH`
+   e 0 em qualquer corner deterministico, o patch `strip_mc_mm_switch_mismatch_term`
+   remove o termo aditivo inteiro (no-op numerico para simulacao nominal).
+   **LIMITACAO CONHECIDA**: isso desliga mismatch estatistico (Monte
+   Carlo) no lado Xyce para nfet_01v8 ate acharmos uma forma que o Xyce
+   aceite (ou até o Xyce ganhar suporte a essa extensão).
+
+## Validacao: Id-Vds nfet_01v8, ngspice (original) vs Xyce (convertido)
+
+`validate/nfet_01v8_idvds/compare.py` instancia um `sky130_fd_pr__nfet_01v8`
+(L=160nm, W=1.1um, corner `tt`) em ambos os simuladores -- ngspice contra
+o netlist original do PDK, Xyce contra a saida de `converter.cli convert`
+-- varre Vds 0..1.8V para 5 valores de Vgs e compara Id ponto a ponto.
+
+![Id-Vds ngspice vs Xyce](validate/results/nfet_01v8_idvds_tt.png)
+
+Erro relativo maximo observado (todos os Vgs, Vds > 0.05V): **~1e-6 %**
+-- ruido de ponto flutuante entre os dois simuladores, nao divergencia
+de modelo. As curvas ngspice (linha) e Xyce (marcador `x`) sao
+visualmente identicas.
+
+| Vgs (V) | erro max (%) | erro medio (%) |
+| ------- | ------------ | -------------- |
+| 0.6     | 6.7e-07      | 3.7e-07        |
+| 0.9     | 5.3e-07      | 2.1e-07        |
+| 1.2     | 9.9e-07      | 1.3e-07        |
+| 1.5     | 5.4e-07      | 1.0e-07        |
+| 1.8     | 6.1e-07      | 1.2e-07        |
+
+Reproduzir (dentro de um ambiente com ngspice, Xyce e o PDK sky130
+instalados -- ver `docker/sky130_xyce_convert` no repo `eda-env`):
+
+```bash
+python3 validate/nfet_01v8_idvds/compare.py \
+    --pdk-root /usr/local/share/pdk --pdk sky130A
+```
+
+Este resultado só cobre gm/gds em DC (achado 1 da matriz de
+`validate.py`); C-V, Y-parameters e IIP3 via HB ainda sao TODO.
+
 ## Uso
 
 ```bash
@@ -109,8 +169,12 @@ python3 -m converter.cli convert \
    trazer parametros dependentes de `sa`/`sb`/drift region que podem
    tocar as expressoes "dinamicas" que o Xyce rejeita (ver conversa
    sobre resistores dependentes de tensao).
-4. Preencher `validate.py` com runners reais de ngspice/Xyce na maquina
-   Docker, comecando pelos 3 casos bloqueantes (gm/gds, C-V, Y-params).
+4. `validate/nfet_01v8_idvds/compare.py` cobre o 1o caso (gm/gds em DC,
+   ver secao "Validacao" acima) com runners reais de ngspice/Xyce.
+   Faltam C-V, Y-parameters (.AC) e IIP3 via HB -- os 2 outros casos
+   bloqueantes da matriz em `validate.py`. Vale integrar este script
+   (ou o padrao dele) de volta em `validate.py`/`run_case` quando isso
+   for feito, hoje sao dois caminhos separados.
 5. ~~Integrar como estagio de build no Dockerfile~~ FEITO -- ver
    `docker/sky130_xyce_convert/install.sh` e o stage `xyce-pdk-convert`
    no `Dockerfile` do repo `eda-env` (`FROM pdk-stage`, escopo restrito
@@ -118,9 +182,8 @@ python3 -m converter.cli convert \
    -- diodo level=3 / mismatch de contagem de bins -- nao nos achados
    ainda em aberto). Esse repo e consumido via `git clone` + `checkout`
    pinado por `SKY130_XYCE_CONVERT_VERSION` (build-arg), mesmo padrao
-   usado para magic/xschem/pdk. Pendente: publicar este repo em
-   `github.com/moduhub/sky130_xyce_convert` (hoje ainda sem git/remoto
-   local) para o `SKY130_XYCE_CONVERT_REPO_URL` default resolver.
+   usado para magic/xschem/pdk. Publicado em
+   `github.com/moduhub/sky130_xyce_convert`.
 6. Avaliar propor isso como flag/hook no `open_pdks`
    (`--enable-xyce-sky130`), no mesmo padrao de magic/xschem/netgen,
    em vez de tentar mergear netlists convertidas no `sky130_fd_pr`

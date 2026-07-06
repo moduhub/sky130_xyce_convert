@@ -44,6 +44,21 @@ def join_continuations(lines: List[str]) -> List[LogicalLine]:
             current_source.append(idx)
             continue
 
+        if stripped.startswith("*"):
+            # Comentario e transparente a continuacao: o sky130 intercala
+            # comentarios tipo "* Model Flag Parameters" NO MEIO de blocos
+            # .model de varias linhas. Sem este caso, o comentario seria
+            # tratado como inicio de nova linha logica e as linhas "+"
+            # seguintes (lmin/lmax/wmin/wmax/level/... os parametros BSIM4
+            # de verdade) seriam absorvidas para dentro do comentario --
+            # apagando silenciosamente o .model inteiro. Emite o comentario
+            # como sua propria linha logica, sem tocar no statement real
+            # que ainda esta sendo acumulado.
+            logical_lines.append(
+                LogicalLine(text=line, source_lines=[idx], raw_fragments=[line])
+            )
+            continue
+
         # nova linha logica comeca aqui: fecha a anterior
         flush()
         current_fragments = [line]
