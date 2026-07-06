@@ -395,13 +395,24 @@ transiente do ngspice (linha) contra a grade discreta do `.HB` do Xyce
 
 ![Espectro two-tone usado na extracao do IIP3](validate/results/nfet_01v8_iip3_spectrum_tt.png)
 
-Da pra ver os dois picos de IM3 (99MHz, 102MHz) claramente acima do
-chao de ruido numerico da FFT (~30-40dB de folga -- medida confiavel,
-nao e o proprio ruido que estamos lendo) e, ao mesmo tempo, visivelmente
-mais baixos que o esperado se batessem com o Xyce -- o gap de ~4x do
-achado 13 aparece aqui como um degrau entre a linha azul (ngspice) e o
-ponto laranja (Xyce) exatamente nessas duas frequencias, enquanto nas
-fundamentais (100MHz, 101MHz) os dois praticamente coincidem.
+Da pra ver os dois picos de IM3 (99MHz, 102MHz, 3a ordem) claramente
+acima do chao de ruido numerico da FFT (~30-40dB de folga -- medida
+confiavel, nao e o proprio ruido que estamos lendo) e, ao mesmo tempo,
+visivelmente mais baixos que o esperado se batessem com o Xyce -- o gap
+de ~4x do achado 13 aparece aqui como um degrau entre a linha azul
+(ngspice) e o ponto laranja (Xyce) exatamente nessas duas frequencias,
+enquanto nas fundamentais (100MHz, 101MHz) os dois praticamente
+coincidem.
+
+Os pontos do Xyce em 98/103MHz e 96/97/104/105MHz **nao sao zero/ruido**
+-- sao produtos de intermodulacao genuinos de 5a e 7a ordem (`|I|` real
+~3e-16A e ~1.5-3e-20A respectivamente, confirmado lendo o CSV bruto do
+`.HB`, nao a versao com piso de plotagem). Caem tao rapido com a ordem
+(coerente com nao-linearidade fraca em Vin=5mV/tom) que ficam bem
+abaixo do chao de ruido do ngspice (~-235 a -250dBA) -- o transiente+FFT
+simplesmente nao tem alcance dinamico pra enxergar esses termos, ainda
+que o Xyce os resolva sem problema. Boa ilustracao pratica de por que
+HB existe como metodo dedicado para esse tipo de analise.
 
 Reproduzir:
 

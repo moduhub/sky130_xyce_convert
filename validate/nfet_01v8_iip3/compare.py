@@ -232,13 +232,17 @@ def main():
     # pontos discretos do .HB do Xyce (grade de intermodulacao, nao um
     # espectro denso -- HB so resolve exatamente as frequencias de
     # mistura que ele mesmo calcula). ---
+    # Piso baixo o bastante para nao mascarar produtos de intermodulacao
+    # de ordem mais alta genuinamente pequenos (ex.: 5a ordem em 98/103MHz
+    # fica ~3e-16 no Xyce -- um piso de 1e-15 os "achataria" a zero).
+    floor = 1e-22
     fmin, fmax = 95e6, 106e6
     mask = (ng_freqs >= fmin) & (ng_freqs <= fmax)
     ng_freqs_win = ng_freqs[mask]
-    ng_db_win = 20 * np.log10(np.maximum(ng_amp[mask], 1e-15))
+    ng_db_win = 20 * np.log10(np.maximum(ng_amp[mask], floor))
 
     xy_freqs_win = sorted(f for f in xy_rows if fmin <= f <= fmax)
-    xy_db_win = [20 * np.log10(max(xy_rows[f], 1e-15)) for f in xy_freqs_win]
+    xy_db_win = [20 * np.log10(max(xy_rows[f], floor)) for f in xy_freqs_win]
 
     fig2, ax2 = plt.subplots(figsize=(10, 6))
     ax2.plot(ng_freqs_win / 1e6, ng_db_win, "-", color="tab:blue", linewidth=1,
@@ -251,7 +255,8 @@ def main():
     ax2.set_xlabel("freq (MHz)")
     ax2.set_ylabel("|I(VDS)| (dBA)")
     ax2.set_title(f"Espectro two-tone usado na extracao do IIP3 (zoom {fmin/1e6:.0f}-{fmax/1e6:.0f}MHz)\n"
-                  f"picos: f1/f2 (fundamentais) e IM3 (2f1-f2, 2f2-f1) -- resto e ruido/chao numerico")
+                  f"f1/f2 (fundamentais), IM3 3a ordem (99/102MHz); pontos Xyce em 98/103MHz (5a ordem) e\n"
+                  f"96/97/104/105MHz (7a ordem) sao reais mas abaixo do chao de ruido do ngspice")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
     fig2.tight_layout()
