@@ -179,6 +179,52 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
     Descoberto comparando os dados BRUTOS de ngspice e Xyce lado a lado
     -- batiam perfeitamente uma vez alinhados corretamente.
 
+12. **Sintaxe do `.HB` do Xyce (nao documentada em lugar obvio, achada
+    por tentativa/erro guiado pelas mensagens de erro)**: `.HB
+    FREQ=f1,f2` e `.HB TONES=f1,f2` **nao** funcionam ("Attempt to
+    assign value for FREQ from ..."). A forma que funciona e
+    posicional, frequencias separadas por ESPACO (nao virgula):
+    `.HB f1 f2`. `NUMFREQ=` e opcional (usa default se omitido). Saida
+    no dominio da frequencia via `.PRINT HB_FD FORMAT=csv ... I(dev)`
+    -- da Re/Im direto por frequencia, sem precisar de FFT.
+
+13. **IIP3 (two-tone): ngspice transiente+FFT converge na direcao certa
+    mas nao fecha com Xyce `.HB` -- ABERTO, nao bloqueante**. f1=100MHz,
+    f2=101MHz, 5mV/tom, Vgs=1.2V/Vds=0.9V. As fundamentais (f1, f2)
+    batem quase exato entre os dois metodos (`1.2050e-06` ngspice vs
+    `1.2053e-06` Xyce), mas o IM3 (2f1-f2, 2f2-f1) -- ~100dB abaixo da
+    fundamental -- e onde a coisa complica:
+    - Gotcha 1 (ngspice): `.tran` sem `linearize` antes do `wrdata`
+      grava os passos ADAPTATIVOS internos (nao uniformes) -- quebra
+      qualquer FFT. Precisa de `linearize i(VDS)` antes.
+    - Gotcha 2 (ngspice): com numero IMPAR de amostras (contando os
+      dois extremos do `.tran`), nenhuma das 4 frequencias de interesse
+      cai exatamente num bin da FFT -- vazamento espectral mesmo sem
+      janela (Hanning so piora, espalhando ainda mais a fundamental
+      enorme pros bins vizinhos onde o IM3 minusculo mora). Descartar a
+      ultima amostra (numero PAR) resolve, dado que f1/f2/IM3 sao todos
+      multiplos exatos de 1MHz e a janela e 20us.
+    - Com esses dois fixes e `reltol` default, o IM3 do ngspice ainda
+      saia ~70-100x maior que o do Xyce (assimetrico entre os dois
+      lados tambem, 2f1-f2 vs 2f2-f1). Bem provavel: ruido numerico do
+      solver de transiente, ja que IM3 esta ~100dB abaixo da fundamental
+      -- perto ou abaixo do chao de precisao do `reltol`/`abstol` default.
+      Apertando pra `reltol=1e-10` (`vntol=1e-18 abstol=1e-21`), o gap
+      cai pra ~4x (`3.9e-11`/`4.4e-11` ngspice vs `9.7e-12` Xyce nos
+      dois lados) e fica bem mais simetrico. `reltol=1e-11` ou mais
+      apertado **quebra** a simulacao (poucas centenas/milhares de
+      pontos em vez de dezenas de milhares -- o solver falha, nao
+      converge melhor).
+    - Resultado final: `Vin_IIP3` ngspice=853mV vs Xyce=1761mV (razao
+      0.48, ~2x). Acima da tolerancia de 10% que `validate.py` propõe,
+      mas esse caso ja e nao-bloqueante ali -- e um teste conhecido
+      como dificil (por isso o proprio Xyce tem `.HB` dedicado: metodo
+      de transiente+FFT tem dificuldade real pra resolver sinais dezenas
+      de dB abaixo da fundamental sem apertar tolerancia ao ponto de
+      instabilidade numerica). Nao indica divergencia de modelo -- as
+      fundamentais batem quase exato, e a nao-linearidade de Id(Vgs,Vds)
+      que gera IM3 ja foi validada no teste DC.
+
 ## Validacao: Id-Vds nfet_01v8, ngspice (original) vs Xyce (convertido)
 
 `validate/nfet_01v8_idvds/compare.py` instancia um `sky130_fd_pr__nfet_01v8`
@@ -298,6 +344,34 @@ Reproduzir:
 
 ```bash
 python3 validate/nfet_01v8_yparams/cdb_3port_check.py \
+    --pdk-root /usr/local/share/pdk --pdk sky130A
+```
+
+## Validacao: IIP3 (two-tone) nfet_01v8, ngspice vs Xyce
+
+`validate/nfet_01v8_iip3/compare.py` -- os dois metodos que `validate.py`
+ja previa (".HB (Xyce) vs transiente+FFT (ngspice)"). f1=100MHz,
+f2=101MHz, 5mV/tom, Vgs=1.2V/Vds=0.9V (mesmo device dos outros testes).
+
+![IIP3 two-tone ngspice vs Xyce](validate/results/nfet_01v8_iip3_tt.png)
+
+|                 | ngspice     | Xyce        |
+| --------------- | ----------- | ----------- |
+| f1 (100MHz)     | 1.2050e-06  | 1.2053e-06  |
+| f2 (101MHz)     | 1.2050e-06  | 1.2053e-06  |
+| IM3 lo (99MHz)  | 3.8650e-11  | 9.7135e-12  |
+| IM3 hi (102MHz) | 4.4160e-11  | 9.7135e-12  |
+
+`Vin_IIP3`: ngspice=853mV, Xyce=1761mV (razao 0.48). Fundamentais batem
+quase exato; IM3 ainda diverge ~4x mesmo depois dos fixes de
+metodologia (achado 13) -- **aberto, nao bloqueante**, resultado de
+limitacao pratica do metodo transiente+FFT pra sinais ~100dB abaixo da
+fundamental, nao de divergencia de modelo entre os simuladores.
+
+Reproduzir:
+
+```bash
+python3 validate/nfet_01v8_iip3/compare.py \
     --pdk-root /usr/local/share/pdk --pdk sky130A
 ```
 
