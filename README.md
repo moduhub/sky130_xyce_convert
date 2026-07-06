@@ -107,21 +107,26 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    Carlo) no lado Xyce para nfet_01v8 ate acharmos uma forma que o Xyce
    aceite (ou até o Xyce ganhar suporte a essa extensão).
 
-8. **Divergencia real em Y22 (parte imaginaria) -- ABERTA, nao e bug do
-   conversor**: validando `.AC` (ver secao abaixo), Y11/Y12/Y21 batem com
-   erro <2e-4% em toda a faixa 1MHz-10GHz, mas a parte imaginaria de Y22
-   (capacitancia de saida, dreno-substrato/overlap) diverge de forma
-   sistematica e **proporcional a frequencia** (nao e ruido -- razao
-   ngspice/Xyce constante em toda a faixa). Com `ad=as=pd=ps=0`
-   (default do subckt) a razao e 1.2573x; com `ad/as/pd/ps` explicitos
-   e realistas (diffusion de 1 finger) cai para ~1.1237x mas nao some --
-   ou seja, tem componente de area de juncao (parcialmente explicado por
-   como cada simulador trata `geomod=0` + AD/AS default) **e** um
-   componente residual independente de area (provavelmente `cgdo`/`cgso`,
-   overlap capacitance), ainda nao isolado. gds (parte real de Y22)
-   bate perfeitamente. Nao bloqueia HB/mixer/PA se o produto final so
-   depender de gm/Cgg/Cgd (Y11/Y12/Y21), mas afeta qualquer analise
-   sensivel a impedancia de saida em RF (matching, Q de saida).
+8. **Divergencia real em Y22 (parte imaginaria) -- ISOLADA em Cdb, ABERTA,
+   nao e bug do conversor**: validando `.AC` (ver secao abaixo), Y11/Y12/Y21
+   batem com erro <2e-4% em toda a faixa 1MHz-10GHz, mas a parte
+   imaginaria de Y22 diverge de forma sistematica e **proporcional a
+   frequencia** (razao ngspice/Xyce constante em toda a faixa, nao e
+   ruido). Decompondo `Cdd_total = Im(Y22)/w` usando o `Cgd` medido
+   independentemente no teste de C-V (achado abaixo) no mesmo ponto de
+   polarizacao (Vgs=1.2V/Vds=0.9V): `Cgd` bate **identico** entre os
+   dois simuladores (`-4.629324e-19` nos dois, razao 1.0000), mas
+   `Cdb = Cdd_total - Cgd` reproduz sozinho quase toda a razao do total
+   (1.1238 vs 1.1237 do total -- `Cgd` e 3 ordens de grandeza menor que
+   `Cdb` nesse ponto, ja em saturacao). **A divergencia inteira de Y22 e
+   `Cdb` (capacitancia de juncao dreno-substrato)** -- exatamente a
+   capacitancia que depende de `AD`/`PD` (a razao caiu de 1.2573x com
+   `ad=pd=0` para 1.1237x com `AD`/`PD` explicitos, achado ja registrado
+   antes) e que o Xyce nao deixa ler direto via variavel interna
+   (achado 9) -- so dava pra inferir indiretamente via Y22 mesmo.
+   `Cgd`/`gds` (as partes que batem) sao as que efetivamente importam
+   pra HB/mixer/PA (Y11/Y12/Y21); `Cdb` afeta impedancia de saida em RF
+   (matching, Q de saida) onde o bulk/substrato entra na malha.
 
 9. **Xyce nao expõe cgb/cbd/cbs/id via query de variavel interna do
    dispositivo -- limitacao de introspeccao, nao do modelo**: testando
