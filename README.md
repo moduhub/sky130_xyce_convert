@@ -107,6 +107,22 @@ Rodando `converter.cli scan` nos dois arquivos do repositorio:
    Carlo) no lado Xyce para nfet_01v8 ate acharmos uma forma que o Xyce
    aceite (ou até o Xyce ganhar suporte a essa extensão).
 
+8. **Divergencia real em Y22 (parte imaginaria) -- ABERTA, nao e bug do
+   conversor**: validando `.AC` (ver secao abaixo), Y11/Y12/Y21 batem com
+   erro <2e-4% em toda a faixa 1MHz-10GHz, mas a parte imaginaria de Y22
+   (capacitancia de saida, dreno-substrato/overlap) diverge de forma
+   sistematica e **proporcional a frequencia** (nao e ruido -- razao
+   ngspice/Xyce constante em toda a faixa). Com `ad=as=pd=ps=0`
+   (default do subckt) a razao e 1.2573x; com `ad/as/pd/ps` explicitos
+   e realistas (diffusion de 1 finger) cai para ~1.1237x mas nao some --
+   ou seja, tem componente de area de juncao (parcialmente explicado por
+   como cada simulador trata `geomod=0` + AD/AS default) **e** um
+   componente residual independente de area (provavelmente `cgdo`/`cgso`,
+   overlap capacitance), ainda nao isolado. gds (parte real de Y22)
+   bate perfeitamente. Nao bloqueia HB/mixer/PA se o produto final so
+   depender de gm/Cgg/Cgd (Y11/Y12/Y21), mas afeta qualquer analise
+   sensivel a impedancia de saida em RF (matching, Q de saida).
+
 ## Validacao: Id-Vds nfet_01v8, ngspice (original) vs Xyce (convertido)
 
 `validate/nfet_01v8_idvds/compare.py` instancia um `sky130_fd_pr__nfet_01v8`
@@ -139,6 +155,36 @@ python3 validate/nfet_01v8_idvds/compare.py \
 
 Este resultado só cobre gm/gds em DC (achado 1 da matriz de
 `validate.py`); C-V, Y-parameters e IIP3 via HB ainda sao TODO.
+
+## Validacao: Y-parameters nfet_01v8, ngspice vs Xyce (.AC)
+
+`validate/nfet_01v8_yparams/compare.py` extrai Y11/Y12/Y21/Y22 via duas
+excitacoes `.AC` (2-porta: porta 1 = gate, porta 2 = drain; a fonte de
+tensao ideal na porta nao excitada funciona como curto AC), varrendo
+1MHz-10GHz no ponto de polarizacao Vgs=1.2V/Vds=0.9V (mesmo device do
+teste Id-Vds).
+
+![Y-parameters ngspice vs Xyce](validate/results/nfet_01v8_yparams_tt.png)
+
+| parametro | erro max (%) |
+| --------- | ------------ |
+| Y11       | 2.1e-07      |
+| Y21       | 1.8e-04      |
+| Y12       | 1.6e-05      |
+| Y22       | 7.1          |
+
+Y11 (admitancia de entrada / Cgg), Y21 (transcondutancia direta) e Y12
+(transferencia reversa / Cgd) batem tao bem quanto o teste DC. **Y22
+diverge visivelmente acima de ~1GHz** -- ver achado 8 acima; e uma
+divergencia real de capacitancia de saida entre os dois simuladores,
+nao um artefato do conversor (gds, a parte real, bate perfeitamente).
+
+Reproduzir:
+
+```bash
+python3 validate/nfet_01v8_yparams/compare.py \
+    --pdk-root /usr/local/share/pdk --pdk sky130A
+```
 
 ## Uso
 
